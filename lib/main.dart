@@ -7,6 +7,7 @@ import 'theme/clinical_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  ApiConfig.validateEndpointSecurity();
   runApp(HealthWingApp(dependencies: AppDependencies()));
 }
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -273,7 +274,7 @@ void main() {
                   'assigned_vet_name': 'Dr. Camille Reyes',
                   'rationale': 'Queue #1',
                 },
-                'preempted_schedules': [],
+                'preempted_count': 0,
               },
             }),
             201,
@@ -628,6 +629,7 @@ void main() {
   group('OfflineCache', () {
     test('persists and reads Pet Medical Cards and Rx records offline',
         () async {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final cache = OfflineCache();
 

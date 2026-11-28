@@ -229,7 +229,7 @@ class EmergencyBookingData {
     required this.status,
     required this.severityLevel,
     this.triage,
-    required this.preemptedSchedules,
+    required this.preemptedCount,
   });
 
   final int bookingId;
@@ -238,7 +238,7 @@ class EmergencyBookingData {
   final String status;
   final String severityLevel;
   final EmergencyTriageAllocation? triage;
-  final List<Map<String, dynamic>> preemptedSchedules;
+  final int preemptedCount;
 
   factory EmergencyBookingData.fromJson(Map<String, dynamic> json) {
     final rawTriage = json['triage'];
@@ -253,9 +253,7 @@ class EmergencyBookingData {
       status: JsonParsers.parseString(json['status']),
       severityLevel: JsonParsers.parseString(json['severity_level']),
       triage: triage,
-      preemptedSchedules: JsonParsers.parseList(json['preempted_schedules'])
-          .map(JsonParsers.parseMap)
-          .toList(growable: false),
+      preemptedCount: JsonParsers.parseInt(json['preempted_count']),
     );
   }
 
@@ -267,7 +265,7 @@ class EmergencyBookingData {
       'status': status,
       'severity_level': severityLevel,
       'triage': triage?.toJson(),
-      'preempted_schedules': preemptedSchedules,
+      'preempted_count': preemptedCount,
     };
   }
 }

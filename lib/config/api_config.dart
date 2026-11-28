@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Configuration for HealthWing mobile REST API and WebSocket endpoints.
 class ApiConfig {
   /// Default REST API base URL for Android Emulator reaching Laragon on host.
@@ -7,15 +9,40 @@ class ApiConfig {
   /// `http://192.168.1.10/HealthWing/api/mobile` or
   /// `http://192.168.1.10/VetSystem/api/mobile` depending on your Laragon folder).
   /// Use `https://` in production deployments.
-  static const String defaultBaseUrl =
-      'http://10.0.2.2/HealthWing/api/mobile';
+  static const String defaultBaseUrl = String.fromEnvironment(
+    'HW_API_BASE_URL',
+    defaultValue: 'http://10.0.2.2/HealthWing/api/mobile',
+  );
 
   /// Default WebSocket URL for Android Emulator reaching `ws_server.php`.
   ///
   /// For a physical device on the same LAN as Laragon, replace `10.0.2.2` with
   /// your host machine's Laragon LAN IP (for example: `ws://192.168.1.10:8080`).
   /// Use `wss://` behind a TLS reverse proxy in production.
-  static const String defaultWsUrl = 'ws://10.0.2.2:8080';
+  static const String defaultWsUrl = String.fromEnvironment(
+    'HW_WS_URL',
+    defaultValue: 'ws://10.0.2.2:8080',
+  );
+
+  /// Emits a release warning for cleartext REST or WebSocket endpoints.
+  ///
+  /// Assertions also guard debug/profile builds, where enabled.
+  static void validateEndpointSecurity([ApiConfig? config]) {
+    final baseUrl = config?.baseUrl ?? current.baseUrl;
+    final wsUrl = config?.wsUrl ?? current.wsUrl;
+    final hasCleartextEndpoint =
+        baseUrl.toLowerCase().startsWith('http://') ||
+        wsUrl.toLowerCase().startsWith('ws://');
+    assert(
+      !hasCleartextEndpoint,
+      'HW_API_BASE_URL/HW_WS_URL must use HTTPS/WSS in release builds.',
+    );
+    if (kReleaseMode && hasCleartextEndpoint) {
+      debugPrint(
+        'HealthWing security warning: cleartext HTTP/WS endpoint configured.',
+      );
+    }
+  }
 
   /// Standard loading label required across the HealthWing mobile client.
   static const String loadingLabel = 'Loading...';

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:material_ui/material_ui.dart';
@@ -50,6 +51,7 @@ class _MemoryAuthStorage extends AuthStorage {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  FlutterSecureStorage.setMockInitialValues(<String, String>{});
 
   Future<void> setMobileViewport(WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(408, 900));

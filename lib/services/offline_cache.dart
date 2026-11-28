@@ -1,17 +1,21 @@
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/offline_models.dart';
 import '../models/owner_dashboard_models.dart';
 
-/// Offline `shared_preferences` cache for Pet Medical Cards, Rx records,
-/// and owner dashboard snapshots.
+/// Encrypted offline cache for Pet Medical Cards, Rx records, and owner
+/// dashboard snapshots.
 ///
-/// Decrypted blockchain receipts are intentionally excluded from plaintext
-/// `SharedPreferences` storage for RA 10173 data protection.
+/// Decrypted blockchain receipts are intentionally excluded. Legacy plaintext
+/// cache keys are removed during secure cache writes and sign-out cleanup.
 class OfflineCache {
-  OfflineCache({this._preferences});
+  OfflineCache({
+    FlutterSecureStorage? storage,
+    this._preferences,
+  }) : _storage = storage ?? const FlutterSecureStorage();
 
   static const String _keyPrefix = 'hw_offline_';
   static const String _cardsPrefix = '${_keyPrefix}pet_cards_owner_';
@@ -19,9 +23,10 @@ class OfflineCache {
   static const String _dashboardPrefix = '${_keyPrefix}owner_dashboard_';
   static const String _savedAtPrefix = '${_keyPrefix}saved_at_owner_';
 
+  final FlutterSecureStorage _storage;
   SharedPreferences? _preferences;
 
-  Future<SharedPreferences> _prefs() async {
+  Future<SharedPreferences> _legacyPrefs() async {
     return _preferences ??= await SharedPreferences.getInstance();
   }
 
@@ -30,10 +35,10 @@ class OfflineCache {
     int ownerId,
     List<OfflinePetMedicalCard> cards,
   ) async {
-    final prefs = await _prefs();
     final encoded = jsonEncode(cards.map((card) => card.toJson()).toList());
-    await prefs.setString('$_cardsPrefix$ownerId', encoded);
-    await _markSavedAt(prefs, ownerId);
+    await _storage.write(key: '$_cardsPrefix$ownerId', value: encoded);
+    await _markSavedAt(ownerId);
+    await _removeLegacyOwnerKeys(ownerId);
   }
 
   /// Inserts or replaces a single Pet Medical Card for [ownerId].
@@ -52,8 +57,7 @@ class OfflineCache {
 
   /// Reads all cached Pet Medical Cards for [ownerId].
   Future<List<OfflinePetMedicalCard>> readPetMedicalCards(int ownerId) async {
-    final prefs = await _prefs();
-    final raw = prefs.getString('$_cardsPrefix$ownerId');
+    final raw = await _storage.read(key: '$_cardsPrefix$ownerId');
     if (raw == null || raw.trim().isEmpty) {
       return const <OfflinePetMedicalCard>[];
     }
@@ -92,16 +96,15 @@ class OfflineCache {
     int ownerId,
     List<OfflineRxRecord> records,
   ) async {
-    final prefs = await _prefs();
     final encoded = jsonEncode(records.map((item) => item.toJson()).toList());
-    await prefs.setString('$_rxPrefix$ownerId', encoded);
-    await _markSavedAt(prefs, ownerId);
+    await _storage.write(key: '$_rxPrefix$ownerId', value: encoded);
+    await _markSavedAt(ownerId);
+    await _removeLegacyOwnerKeys(ownerId);
   }
 
   /// Reads all cached prescription (Rx) records for [ownerId].
   Future<List<OfflineRxRecord>> readRxRecords(int ownerId) async {
-    final prefs = await _prefs();
-    final raw = prefs.getString('$_rxPrefix$ownerId');
+    final raw = await _storage.read(key: '$_rxPrefix$ownerId');
     if (raw == null || raw.trim().isEmpty) {
       return const <OfflineRxRecord>[];
     }
@@ -133,10 +136,9 @@ class OfflineCache {
     int ownerId,
     OwnerDashboardResponse dashboard,
   ) async {
-    final prefs = await _prefs();
-    await prefs.setString(
-      '$_dashboardPrefix$ownerId',
-      jsonEncode(dashboard.toJson()),
+    await _storage.write(
+      key: '$_dashboardPrefix$ownerId',
+      value: jsonEncode(dashboard.toJson()),
     );
 
     final existingCards = await readPetMedicalCards(ownerId);
@@ -157,17 +159,17 @@ class OfflineCache {
       );
     }).toList(growable: false);
 
-    await prefs.setString(
-      '$_cardsPrefix$ownerId',
-      jsonEncode(mergedCards.map((c) => c.toJson()).toList()),
+    await _storage.write(
+      key: '$_cardsPrefix$ownerId',
+      value: jsonEncode(mergedCards.map((c) => c.toJson()).toList()),
     );
-    await _markSavedAt(prefs, ownerId);
+    await _markSavedAt(ownerId);
+    await _removeLegacyOwnerKeys(ownerId);
   }
 
   /// Reads the cached [OwnerDashboardResponse] for [ownerId], or null if none.
   Future<OwnerDashboardResponse?> readOwnerDashboard(int ownerId) async {
-    final prefs = await _prefs();
-    final raw = prefs.getString('$_dashboardPrefix$ownerId');
+    final raw = await _storage.read(key: '$_dashboardPrefix$ownerId');
     if (raw == null || raw.trim().isEmpty) return null;
     try {
       final decoded = jsonDecode(raw);
@@ -182,32 +184,49 @@ class OfflineCache {
 
   /// Returns the UTC ISO-8601 timestamp when [ownerId]'s cache was last saved.
   Future<String?> lastSavedAt(int ownerId) async {
-    final prefs = await _prefs();
-    return prefs.getString('$_savedAtPrefix$ownerId');
+    return _storage.read(key: '$_savedAtPrefix$ownerId');
   }
 
   /// Removes cached Pet Medical Cards, Rx records, and dashboard for [ownerId].
   Future<void> clearOwnerCache(int ownerId) async {
-    final prefs = await _prefs();
+    await Future.wait([
+      _storage.delete(key: '$_cardsPrefix$ownerId'),
+      _storage.delete(key: '$_rxPrefix$ownerId'),
+      _storage.delete(key: '$_dashboardPrefix$ownerId'),
+      _storage.delete(key: '$_savedAtPrefix$ownerId'),
+    ]);
+    await _removeLegacyOwnerKeys(ownerId);
+  }
+
+  /// Removes all HealthWing offline cache entries from secure storage.
+  Future<void> clearAll() async {
+    final values = await _storage.readAll();
+    await Future.wait(
+      values.keys.toList()
+          .where((key) => key.startsWith(_keyPrefix))
+          .map((key) => _storage.delete(key: key)),
+    );
+
+    final prefs = await _legacyPrefs();
+    final legacyKeys =
+        prefs.getKeys().where((key) => key.startsWith(_keyPrefix));
+    await Future.wait(legacyKeys.map(prefs.remove));
+  }
+
+  Future<void> _markSavedAt(int ownerId) {
+    return _storage.write(
+      key: '$_savedAtPrefix$ownerId',
+      value: DateTime.now().toUtc().toIso8601String(),
+    );
+  }
+
+  Future<void> _removeLegacyOwnerKeys(int ownerId) async {
+    final prefs = await _legacyPrefs();
     await Future.wait([
       prefs.remove('$_cardsPrefix$ownerId'),
       prefs.remove('$_rxPrefix$ownerId'),
       prefs.remove('$_dashboardPrefix$ownerId'),
       prefs.remove('$_savedAtPrefix$ownerId'),
     ]);
-  }
-
-  /// Removes all HealthWing offline cache entries from `shared_preferences`.
-  Future<void> clearAll() async {
-    final prefs = await _prefs();
-    final keys = prefs.getKeys().where((k) => k.startsWith(_keyPrefix));
-    await Future.wait(keys.map(prefs.remove));
-  }
-
-  Future<void> _markSavedAt(SharedPreferences prefs, int ownerId) {
-    return prefs.setString(
-      '$_savedAtPrefix$ownerId',
-      DateTime.now().toUtc().toIso8601String(),
-    );
   }
 }

@@ -8,6 +8,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     companion object {
         private const val SECURITY_CHANNEL = "healthwing/security"
+        private var secureScreenDepth = 0
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -36,9 +37,17 @@ class MainActivity : FlutterActivity() {
 
                     runOnUiThread {
                         if (enabled) {
-                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                            secureScreenDepth++
+                            if (secureScreenDepth == 1) {
+                                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                            }
                         } else {
-                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                            if (secureScreenDepth > 0) {
+                                secureScreenDepth--
+                            }
+                            if (secureScreenDepth == 0) {
+                                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                            }
                         }
                         result.success(enabled)
                     }
