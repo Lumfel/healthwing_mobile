@@ -48,3 +48,10 @@ app.*.map.json
 .widget_preview/
 
 AI_SHARED_MEMORY.md
+
+# Secrets & release signing
+.env
+*.jks
+*.keystore
+key.properties
+google-services.json

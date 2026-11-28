@@ -288,7 +288,10 @@ class _VetClinicalScreenState extends State<VetClinicalScreen> {
   }
 
   Future<void> _signOut() async {
-    await widget.dependencies.authStorage.clear();
+    await Future.wait([
+      widget.dependencies.authStorage.clear(),
+      widget.dependencies.offlineCache.clearAll(),
+    ]);
     if (!mounted) return;
     Navigator.of(
       context,

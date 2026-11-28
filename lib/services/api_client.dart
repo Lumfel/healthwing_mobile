@@ -190,7 +190,7 @@ class ApiClient {
       final response = await _httpClient
           .get(uri, headers: headers)
           .timeout(config.requestTimeout);
-      return _handleResponse(response);
+      return await _handleResponse(response);
     } on ApiException {
       rethrow;
     } on TimeoutException {
@@ -238,7 +238,7 @@ class ApiClient {
             body: jsonEncode(body),
           )
           .timeout(config.requestTimeout);
-      return _handleResponse(response);
+      return await _handleResponse(response);
     } on ApiException {
       rethrow;
     } on TimeoutException {
@@ -291,7 +291,11 @@ class ApiClient {
     return headers;
   }
 
-  Map<String, dynamic> _handleResponse(http.Response response) {
+  Future<Map<String, dynamic>> _handleResponse(http.Response response) async {
+    if (response.statusCode == 401) {
+      await _authStorage.clear();
+    }
+
     final decoded = _tryDecodeJsonObject(response.body);
     final isHttpSuccess =
         response.statusCode >= 200 && response.statusCode < 300;

@@ -4,10 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/offline_models.dart';
 import '../models/owner_dashboard_models.dart';
-import '../models/receipt_models.dart';
 
 /// Offline `shared_preferences` cache for Pet Medical Cards, Rx records,
-/// owner dashboard snapshots, and verified receipts.
+/// and owner dashboard snapshots.
+///
+/// Decrypted blockchain receipts are intentionally excluded from plaintext
+/// `SharedPreferences` storage for RA 10173 data protection.
 class OfflineCache {
   OfflineCache({this._preferences});
 
@@ -15,7 +17,6 @@ class OfflineCache {
   static const String _cardsPrefix = '${_keyPrefix}pet_cards_owner_';
   static const String _rxPrefix = '${_keyPrefix}rx_owner_';
   static const String _dashboardPrefix = '${_keyPrefix}owner_dashboard_';
-  static const String _receiptPrefix = '${_keyPrefix}receipt_';
   static const String _savedAtPrefix = '${_keyPrefix}saved_at_owner_';
 
   SharedPreferences? _preferences;
@@ -172,29 +173,6 @@ class OfflineCache {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return null;
       return OwnerDashboardResponse.fromJson(
-        decoded.map((k, v) => MapEntry(k.toString(), v)),
-      );
-    } on FormatException {
-      return null;
-    }
-  }
-
-  /// Caches a decrypted [VerifiedReceipt] by its `receipt_code`.
-  Future<void> saveVerifiedReceipt(VerifiedReceipt receipt) async {
-    final prefs = await _prefs();
-    final key = '$_receiptPrefix${receipt.receiptCode}';
-    await prefs.setString(key, jsonEncode(receipt.toJson()));
-  }
-
-  /// Reads a cached [VerifiedReceipt] by [receiptCode], or null if absent.
-  Future<VerifiedReceipt?> readVerifiedReceipt(String receiptCode) async {
-    final prefs = await _prefs();
-    final raw = prefs.getString('$_receiptPrefix${receiptCode.trim()}');
-    if (raw == null || raw.trim().isEmpty) return null;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return null;
-      return VerifiedReceipt.fromJson(
         decoded.map((k, v) => MapEntry(k.toString(), v)),
       );
     } on FormatException {

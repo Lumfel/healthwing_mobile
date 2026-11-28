@@ -39,7 +39,6 @@ class _ReceiptViewerScreenState extends State<ReceiptViewerScreen> {
 
   VerifiedReceipt? _verifiedReceipt;
   bool _isLoading = false;
-  bool _isCachedCopy = false;
   String? _errorMessage;
 
   @override
@@ -80,53 +79,27 @@ class _ReceiptViewerScreenState extends State<ReceiptViewerScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _isCachedCopy = false;
     });
 
     try {
       final response = await widget.dependencies.apiClient.verifyReceipt(code);
-      await widget.dependencies.offlineCache.saveVerifiedReceipt(
-        response.receipt,
-      );
       if (!mounted) return;
       setState(() {
         _verifiedReceipt = response.receipt;
-        _isCachedCopy = false;
       });
     } on ApiException catch (e) {
-      final cached =
-          await widget.dependencies.offlineCache.readVerifiedReceipt(code);
       if (!mounted) return;
-      if (cached != null && e.statusCode == 0) {
-        setState(() {
-          _verifiedReceipt = cached;
-          _isCachedCopy = true;
-          _errorMessage =
-              'Offline mode: displaying previously verified cached receipt.';
-        });
-      } else {
-        setState(() {
-          _verifiedReceipt = null;
-          _errorMessage = e.message;
-        });
-      }
+      setState(() {
+        _verifiedReceipt = null;
+        _errorMessage = e.message;
+      });
     } catch (_) {
-      final cached =
-          await widget.dependencies.offlineCache.readVerifiedReceipt(code);
       if (!mounted) return;
-      if (cached != null) {
-        setState(() {
-          _verifiedReceipt = cached;
-          _isCachedCopy = true;
-          _errorMessage =
-              'Offline mode: displaying previously verified cached receipt.';
-        });
-      } else {
-        setState(() {
-          _verifiedReceipt = null;
-          _errorMessage = 'Unable to verify receipt right now.';
-        });
-      }
+      setState(() {
+        _verifiedReceipt = null;
+        _errorMessage =
+            'Unable to verify receipt right now. Live connection is required for encrypted receipt decryption.';
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -207,7 +180,7 @@ class _ReceiptViewerScreenState extends State<ReceiptViewerScreen> {
             const SizedBox(height: 14),
             if (_errorMessage != null) ...[
               ClinicalBanner(
-                tone: _isCachedCopy ? BannerTone.warning : BannerTone.danger,
+                tone: BannerTone.danger,
                 message: _errorMessage!,
               ),
               const SizedBox(height: 12),

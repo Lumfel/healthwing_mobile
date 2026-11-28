@@ -482,6 +482,42 @@ void main() {
       );
       expect(room.parsedStatus, RoomStatus.ongoing);
     });
+
+    test('clears AuthStorage automatically on HTTP 401 responses', () async {
+      final storage = _InMemoryAuthStorage();
+      await storage.saveSession(
+        const AuthSession(
+          token: 'expired.tok',
+          wsToken: 'expired.ws',
+          userId: 1,
+          username: 'owner1',
+          role: UserRole.owner,
+        ),
+      );
+
+      final client = ApiClient(
+        authStorage: storage,
+        httpClient: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'success': false,
+              'error': 'invalid_or_expired_token',
+              'message': 'Authentication token is invalid or expired.',
+            }),
+            401,
+          ),
+        ),
+      );
+
+      await expectLater(
+        client.getOwnerDashboard(),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 401),
+        ),
+      );
+      expect(await storage.readSession(), isNull);
+      expect(await storage.readToken(), isNull);
+    });
   });
 
   group('WsClient', () {
@@ -555,8 +591,37 @@ void main() {
       expect(chat.message.senderName, 'Dr. Camille Reyes');
       expect(triage.summary, {'queue_length': 1});
 
+      await wsClient.disconnect();
+
+      // Reconnecting after disconnect must not re-subscribe prior channels.
+      final secondChannel = _FakeWebSocketChannel();
+      final wsClient2 = WsClient(
+        channelFactory: (uri, headers) => secondChannel,
+      );
+      await wsClient2.connect(
+        wsToken: 'ws_tok_first',
+        initialChannels: const ['booking_99'],
+      );
+      await wsClient2.disconnect();
+      await wsClient2.connect(wsToken: 'ws_tok_second');
+      secondChannel.incoming.add(
+        jsonEncode({
+          'type': 'auth_ok',
+          'role': 'owner',
+          'user_id': 2,
+          'expires_at': 1999999999,
+        }),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        secondChannel.sentFrames.where((f) => f.contains('booking_99')),
+        isEmpty,
+      );
+
       await wsClient.dispose();
+      await wsClient2.dispose();
       await fakeChannel.incoming.close();
+      await secondChannel.incoming.close();
     });
   });
 
@@ -601,11 +666,16 @@ void main() {
       expect(loadedCard?.prescriptions.single.prescription, rx.prescription);
       expect(loadedRx.single.attendingVetPrc, 'PRC-VET-004821');
       expect(await cache.lastSavedAt(1), isNotNull);
+
+      await cache.clearAll();
+      expect(await cache.readPetMedicalCards(1), isEmpty);
+      expect(await cache.readRxRecords(1), isEmpty);
     });
   });
 
   group('ScreenSecurity', () {
-    test('invokes healthwing/security setSecureScreen method channel',
+    test(
+        'reference-counts FLAG_SECURE so stacked screens do not clear protection early',
         () async {
       final calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -621,8 +691,23 @@ void main() {
 
       final security = ScreenSecurity();
       expect(await security.setSecureScreen(true), isTrue);
+      expect(security.secureDepth, 1);
       expect(security.isSecure, isTrue);
+
+      // Second stacked protected screen increments depth without duplicate clear.
+      expect(await security.setSecureScreen(true), isTrue);
+      expect(security.secureDepth, 2);
+      expect(calls.length, 1);
+
+      // Disposing top screen keeps FLAG_SECURE active for underlying screen.
+      expect(await security.setSecureScreen(false), isTrue);
+      expect(security.secureDepth, 1);
+      expect(security.isSecure, isTrue);
+      expect(calls.length, 1);
+
+      // Disposing final screen clears FLAG_SECURE.
       expect(await security.setSecureScreen(false), isFalse);
+      expect(security.secureDepth, 0);
       expect(security.isSecure, isFalse);
 
       expect(calls.length, 2);

@@ -225,6 +225,7 @@ class WsClient {
   /// Closes the active WebSocket connection without disposing event streams.
   Future<void> disconnect() async {
     _authSent = false;
+    _subscribedChannels.clear();
     await _subscription?.cancel();
     _subscription = null;
     final channel = _channel;
